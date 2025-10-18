@@ -60,7 +60,12 @@ Options:
 
 # Use custom JAR path
 ./parse_draft.py match_12345.dem --jar /path/to/parser.jar
+
+# Try the included sample
+./parse_draft.py examples/8497319569.dem
 ```
+
+A sample replay and its generated HTML output are included in the `examples/` folder.
 
 ## Output
 
@@ -82,6 +87,9 @@ The tool generates a single HTML file containing:
 ```
 dota2-ad-parser/
 ├── parse_draft.py                  # Python script
+├── examples/
+│   ├── 8497319569.dem             # Sample replay
+│   └── 8497319569.html            # Sample output
 ├── src/
 │   └── main/
 │       └── java/

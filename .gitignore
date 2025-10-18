@@ -9,6 +9,8 @@ __pycache__/
 # IDE
 .vscode/
 
-# Output files
+# Output files (except examples)
 *.html
 *.dem
+!examples/*.html
+!examples/*.dem
