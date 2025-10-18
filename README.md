@@ -65,7 +65,7 @@ Options:
 ./parse_draft.py examples/8497319569.dem
 ```
 
-A sample replay and its generated HTML output are included in the `examples/` folder.
+A sample replay and its generated HTML output are included in the `examples/` folder. [View sample output](https://html-preview.github.io/?url=https://github.com/dota2-bkb/dota2-ad-parser/blob/main/examples/8497319569.html)
 
 ## Output
 
