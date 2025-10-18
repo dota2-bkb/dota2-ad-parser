@@ -136,4 +136,4 @@ The script automatically detects the JAR in `target/` after building.
 ## Dependencies
 
 This tool uses:
-- [Clarity](https://github.com/skadistats/clarity) - Dota 2 replay parser (Apache License 2.0)
+- [Clarity](https://github.com/skadistats/clarity) - Dota 2 replay parser (BSD 3-Clause License)
