@@ -16,11 +16,14 @@ import java.util.Set;
 import skadistats.clarity.event.Insert;
 import skadistats.clarity.model.Entity;
 import skadistats.clarity.model.FieldPath;
+import skadistats.clarity.model.StringTable;
 import skadistats.clarity.processor.entities.Entities;
 import skadistats.clarity.processor.entities.OnEntityUpdated;
 import skadistats.clarity.processor.entities.UsesEntities;
 import skadistats.clarity.processor.runner.Context;
 import skadistats.clarity.processor.runner.SimpleRunner;
+import skadistats.clarity.processor.stringtables.StringTables;
+import skadistats.clarity.processor.stringtables.UsesStringTable;
 import skadistats.clarity.source.MappedFileSource;
 
 public class DraftExtractor {
@@ -86,9 +89,13 @@ public class DraftExtractor {
 }
 
 @UsesEntities
+@UsesStringTable("EntityNames")
 class ExtractProcessor {
     @Insert
     private Entities entities;
+
+    @Insert
+    private StringTables stringTables;
 
     private final List<Map<String, Object>> poolItems = new ArrayList<>();
     private final List<Map<String, Object>> heroPool = new ArrayList<>();
@@ -102,14 +109,22 @@ class ExtractProcessor {
     private final Map<Integer, Integer> heroIndexToPlayerID = new HashMap<>();
     // Track draft ability ID -> (player_slot, ability_slot)
     private final Map<Integer, Map<String, Integer>> draftAbilityAssignments = new HashMap<>();
-    // Track resolved abilities: (player_slot, ability_slot) -> ability_key
-    private final Map<String, String> resolvedAbilities = new HashMap<>();
+    // Atomic per-player pairing of draft ability IDs to ability names.
+    // Both sides (gamerules m_AbilityDraftAbilities slots, hero entity
+    // m_vecAbilities) are read in the same entity-update callback so they
+    // describe one arrangement epoch; joining a draft-end gamerules snapshot
+    // with an entity vector observed later mispairs keys for players who
+    // rearranged their abilities in between. A pairing is committed only
+    // after two identical observations on different ticks, so a read that
+    // straddles a hero swap or a partial ability grant can't be committed.
+    private final Map<Integer, String> abilityIdToKey = new HashMap<>();
+    private final Set<Integer> pairedPlayerIds = new HashSet<>();
+    private final Map<Integer, String> pendingPairSignature = new HashMap<>();
+    private final Map<Integer, Integer> pendingPairTick = new HashMap<>();
     // heroID -> heroKey mapping (stable across swaps, built from entities)
     private final Map<Integer, String> heroIdToHeroKey = new HashMap<>();
     // Track which hero class names we've already processed for heroIdToHeroKey
     private final Set<String> processedHeroClasses = new HashSet<>();
-    // Cache heroClassName -> draft-time playerSlot (handles early swaps where entity playerID is post-swap)
-    private final Map<String, Integer> heroClassToDraftSlot = new HashMap<>();
     // Track hero pool playerIDs after draft to detect swap timing
     private final Map<Integer, Integer> postDraftHeroPlayerID = new HashMap<>();
     private final List<Map<String, Object>> swaps = new ArrayList<>();
@@ -127,11 +142,14 @@ class ExtractProcessor {
 
     // Per-player connection state, indexed by m_unPlayerID (0,2,4,6,8 radiant;
     // 10,12,14,16,18 dire). Updated whenever CDOTA_PlayerResource fires.
-    // Value semantics: 2 = CONNECTED, 3 = DISCONNECTED, 4 = ABANDONED.
+    // DOTAConnectionState_t: 0 UNKNOWN, 1 NOT_YET_CONNECTED, 2 CONNECTED,
+    // 3 DISCONNECTED, 4 ABANDONED, 5 LOADING, 6 FAILED.
     // Used at pick time to populate the picker_disconnected flag on each
-    // emitted pick (only meaningful when is_random=True; every random pick
-    // is a server-side timeout, this flag splits timeouts by whether the
-    // player was still online at the moment).
+    // emitted pick: state != CONNECTED at the tick the pick registered, so it
+    // also marks never-connected and still-loading seats, not only mid-game
+    // drops. Only meaningful when is_random=True; every random pick is a
+    // server-side timeout, and this flag splits timeouts by whether the
+    // picker was present at that moment.
     private final Map<Integer, Integer> playerIdToConnectionState = new HashMap<>();
 
     private static final int GAME_STATE_PICKING = 2;
@@ -192,7 +210,7 @@ class ExtractProcessor {
 
         // Track HERO entities after draft ends to resolve ability names
         if (draftEnded && dtName.startsWith("CDOTA_Unit_Hero_")) {
-            processHeroEntity(entity, dtName);
+            processHeroEntity(ctx, entity, dtName);
         }
 
         // Track per-player connection state from CDOTA_PlayerResource.
@@ -260,7 +278,7 @@ class ExtractProcessor {
         return map;
     }
 
-    private void processHeroEntity(Entity hero, String heroClassName) {
+    private void processHeroEntity(Context ctx, Entity hero, String heroClassName) {
         Integer playerId = null;
         if (hero.hasProperty("m_iPlayerID")) {
             playerId = safeInt(hero.getProperty("m_iPlayerID"));
@@ -273,135 +291,120 @@ class ExtractProcessor {
             return;
         }
 
-        String heroKey = convertHeroClassNameToKey(heroClassName);
-
-        // Find the gamerules hero pool entry matching this entity's playerID.
-        // From that, get the draft-time playerID (which may differ for early swaps
-        // where entity playerIDs are already post-swap).
+        // Register heroID -> heroKey from the gamerules hero pool entry
+        // matching this entity's playerID. The key comes from the EntityNames
+        // string table (the npc_dota_hero_* npc name — the exact name OpenDota
+        // keys heroes by, prefix stripped), the same source as ability names;
+        // no class-name conversion. Unresolved at this tick -> the class is
+        // not marked processed, so a later entity update retries.
         if (!processedHeroClasses.contains(heroClassName)) {
-            processedHeroClasses.add(heroClassName);
-            for (int i = 0; i < heroPool.size(); i++) {
-                String idx = String.format("%04d", i);
-                String pidProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_unPlayerID";
-                String hidProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_nHeroID";
-                if (!gamerules.hasProperty(pidProp)) continue;
-                Integer grPid = safeInt(gamerules.getProperty(pidProp));
-                if (grPid != null && grPid.equals(playerId)) {
-                    Integer heroId = safeInt(gamerules.getProperty(hidProp));
-                    if (heroId != null) {
-                        heroIdToHeroKey.put(heroId, heroKey);
+            String heroKey = heroEntityKey(hero);
+            if (heroKey != null) {
+                processedHeroClasses.add(heroClassName);
+                for (int i = 0; i < heroPool.size(); i++) {
+                    String idx = String.format("%04d", i);
+                    String pidProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_unPlayerID";
+                    String hidProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_nHeroID";
+                    if (!gamerules.hasProperty(pidProp)) continue;
+                    Integer grPid = safeInt(gamerules.getProperty(pidProp));
+                    if (grPid != null && grPid.equals(playerId)) {
+                        Integer heroId = safeInt(gamerules.getProperty(hidProp));
+                        if (heroId != null) {
+                            heroIdToHeroKey.put(heroId, heroKey);
+                        }
+                        break;
                     }
-                    // Cache draft-time slot for ability resolution
-                    Integer draftPid = heroIndexToPlayerID.get(i);
-                    if (draftPid != null) {
-                        heroClassToDraftSlot.put(heroClassName, convertPlayerIdToSlot(draftPid));
-                    }
-                    break;
                 }
             }
         }
-        int draftPlayerSlot = heroClassToDraftSlot.getOrDefault(heroClassName, convertPlayerIdToSlot(playerId));
 
-        // Extract abilities from m_vecAbilities - slots 0, 1, 2, 5 are the draft abilities
-        int[] heroSlots = {0, 1, 2, 5};
-        for (int i = 0; i < 4; i++) {
-            int abilitySlot = i;
-            int heroSlot = heroSlots[i];
+        pairPlayerAbilities(ctx.getTick(), hero, playerId);
+    }
 
-            String slotKey = draftPlayerSlot + ":" + abilitySlot;
+    // m_vecAbilities positions of the drafted abilities: draft slots 0,1,2
+    // (basics) sit at 0,1,2; the ult (draft slot 3) sits at 5. Positions 3,4
+    // hold hidden/linked sub-abilities.
+    private static final int[] ABILITY_VECTOR_POSITIONS = {0, 1, 2, 5};
 
-            // Skip if already resolved
-            if (resolvedAbilities.containsKey(slotKey)) {
-                continue;
-            }
+    private void pairPlayerAbilities(int tick, Entity hero, int playerId) {
+        if (pairedPlayerIds.contains(playerId) || gamerules == null) {
+            return;
+        }
 
-            String abilityHandleProp = "m_vecAbilities." + String.format("%04d", heroSlot);
-            if (!hero.hasProperty(abilityHandleProp)) {
-                continue;
-            }
-
-            Integer handle = safeInt(hero.getProperty(abilityHandleProp));
-            if (handle == null || handle <= 0) {
-                continue;
-            }
-
+        // Entity side: drafted ability names by draft slot, from this hero's
+        // current ability vector.
+        String[] names = new String[4];
+        Set<String> distinct = new HashSet<>();
+        for (int slot = 0; slot < 4; slot++) {
+            String prop = "m_vecAbilities." + String.format("%04d", ABILITY_VECTOR_POSITIONS[slot]);
+            if (!hero.hasProperty(prop)) return;
+            Integer handle = safeInt(hero.getProperty(prop));
+            if (handle == null || handle <= 0) return;
             Entity abilityEntity = entities.getByHandle(handle);
-            if (abilityEntity == null) {
-                continue;
-            }
+            if (abilityEntity == null) return;
+            String name = entityName(abilityEntity);
+            if (name == null || name.equals("generic_hidden") || !distinct.add(name)) return;
+            names[slot] = name;
+        }
 
-            String abilityClassName = abilityEntity.getDtClass().getDtName();
-            if (abilityClassName == null || !abilityClassName.startsWith("CDOTA_Ability_")) {
-                continue;
-            }
+        // Gamerules side: this player's draft ability IDs by current slot,
+        // read in the same callback so both sides are at the same tick.
+        int[] idBySlot = {-1, -1, -1, -1};
+        int found = 0;
+        for (int i = 0; i < poolItems.size(); i++) {
+            String idx = String.format("%04d", i);
+            String base = "m_pGameRules.m_AbilityDraftAbilities." + idx + ".";
+            if (!gamerules.hasProperty(base + "m_unPlayerID")) continue;
+            Integer pid = safeInt(gamerules.getProperty(base + "m_unPlayerID"));
+            if (pid == null || pid != playerId) continue;
+            Integer abilityId = safeInt(gamerules.getProperty(base + "m_nAbilityID"));
+            Integer slot = safeInt(gamerules.getProperty(base + "m_unAbilityPlayerSlot"));
+            if (abilityId == null || slot == null || slot < 0 || slot > 3 || idBySlot[slot] != -1) return;
+            idBySlot[slot] = abilityId;
+            found++;
+        }
+        if (found != 4) return;
 
-            String abilityKey = convertAbilityClassNameToKey(abilityClassName);
-            resolvedAbilities.put(slotKey, abilityKey);
+        StringBuilder sig = new StringBuilder();
+        for (int slot = 0; slot < 4; slot++) {
+            sig.append(idBySlot[slot]).append('=').append(names[slot]).append(';');
+        }
+        String signature = sig.toString();
+
+        Integer pendingTick = pendingPairTick.get(playerId);
+        if (signature.equals(pendingPairSignature.get(playerId))) {
+            if (tick > pendingTick) {
+                for (int slot = 0; slot < 4; slot++) {
+                    abilityIdToKey.put(idBySlot[slot], names[slot]);
+                }
+                pairedPlayerIds.add(playerId);
+                pendingPairSignature.remove(playerId);
+                pendingPairTick.remove(playerId);
+            }
+        } else {
+            pendingPairSignature.put(playerId, signature);
+            pendingPairTick.put(playerId, tick);
         }
     }
 
-    private static String convertAbilityClassNameToKey(String className) {
-        // CDOTA_Ability_Tinker_Laser -> tinker_laser
-        if (!className.startsWith("CDOTA_Ability_")) {
-            return className;
-        }
-
-        String withoutPrefix = className.substring("CDOTA_Ability_".length());
-
-        StringBuilder result = new StringBuilder();
-        boolean lastWasUnderscore = true;
-        for (int i = 0; i < withoutPrefix.length(); i++) {
-            char c = withoutPrefix.charAt(i);
-            if (c == '_') {
-                if (!lastWasUnderscore) {
-                    result.append('_');
-                    lastWasUnderscore = true;
-                }
-            } else if (Character.isUpperCase(c)) {
-                if (i > 0 && !lastWasUnderscore) {
-                    result.append('_');
-                }
-                result.append(Character.toLowerCase(c));
-                lastWasUnderscore = false;
-            } else {
-                result.append(c);
-                lastWasUnderscore = false;
-            }
-        }
-
-        return result.toString();
+    private String entityName(Entity e) {
+        if (!e.hasProperty("m_pEntity.m_nameStringTableIndex")) return null;
+        Integer idx = safeInt(e.getProperty("m_pEntity.m_nameStringTableIndex"));
+        if (idx == null || idx < 0) return null;
+        StringTable table = stringTables.forName("EntityNames");
+        if (table == null || !table.hasIndex(idx)) return null;
+        return table.getNameByIndex(idx);
     }
 
-    private static String convertHeroClassNameToKey(String className) {
-        // CDOTA_Unit_Hero_Pangolier -> pangolier
-        if (!className.startsWith("CDOTA_Unit_Hero_")) {
-            return className;
+    private String heroEntityKey(Entity hero) {
+        // npc_dota_hero_sand_king -> sand_king
+        String name = entityName(hero);
+        if (name == null) return null;
+        if (!name.startsWith("npc_dota_hero_")) {
+            throw new IllegalStateException(
+                "Hero entity's EntityNames entry is not an npc_dota_hero_* name: " + name);
         }
-
-        String withoutPrefix = className.substring("CDOTA_Unit_Hero_".length());
-
-        StringBuilder result = new StringBuilder();
-        boolean lastWasUnderscore = true;
-        for (int i = 0; i < withoutPrefix.length(); i++) {
-            char c = withoutPrefix.charAt(i);
-            if (c == '_') {
-                if (!lastWasUnderscore) {
-                    result.append('_');
-                    lastWasUnderscore = true;
-                }
-            } else if (Character.isUpperCase(c)) {
-                if (i > 0 && !lastWasUnderscore) {
-                    result.append('_');
-                }
-                result.append(Character.toLowerCase(c));
-                lastWasUnderscore = false;
-            } else {
-                result.append(c);
-                lastWasUnderscore = false;
-            }
-        }
-
-        return result.toString();
+        return name.substring("npc_dota_hero_".length());
     }
 
     private void trackDraftMeta(Context ctx, Entity gamerules) {
@@ -686,9 +689,7 @@ class ExtractProcessor {
                 continue;
             }
 
-            // Lookup uses draft-time slot (matches how resolvedAbilities was stored)
-            String slotKey = playerSlot + ":" + abilitySlot;
-            String abilityKey = resolvedAbilities.get(slotKey);
+            String abilityKey = abilityIdToKey.get(draftAbilityId);
 
             if (abilityKey != null) {
                 int finalSlot = swapMap.getOrDefault(playerSlot, playerSlot);
