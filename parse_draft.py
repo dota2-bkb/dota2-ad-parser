@@ -111,6 +111,10 @@ def generate_html(draft_data, dem_file):
             "player_slot": hero_pick.get("player_slot", 0),
             "hero_id": hero_pick.get("hero_id", 0),
             "hero_key": hero_pick.get("hero_key", ""),
+            "is_random": hero_pick.get("is_random", False),
+            "pick_duration": hero_pick.get("pick_duration"),
+            "picker_disconnected": hero_pick.get("picker_disconnected", False),
+            "original_player_slot": hero_pick.get("original_player_slot"),
         })
 
     # Add ability picks
@@ -120,6 +124,9 @@ def generate_html(draft_data, dem_file):
             "tick": pick.get("tick", 0),
             "player_slot": pick.get("player_slot", 0),
             "draft_ability_id": pick.get("draft_ability_id", 0),
+            "is_random": pick.get("is_random", False),
+            "pick_duration": pick.get("pick_duration"),
+            "picker_disconnected": pick.get("picker_disconnected", False),
         })
 
     # Sort by tick (chronological order)
@@ -127,6 +134,7 @@ def generate_html(draft_data, dem_file):
 
     # Calculate stats
     ult_ids = build_ult_set(ability_mappings)
+    num_random = sum(1 for p in combined_picks if p.get("is_random"))
     radiant_ability_picks = sum(1 for p in picks if p.get("player_slot", 0) < 128)
     dire_ability_picks = sum(1 for p in picks if p.get("player_slot", 0) >= 128)
     num_ults = len(ult_ids)
@@ -226,6 +234,24 @@ def generate_html(draft_data, dem_file):
             font-weight: 700;
             color: #f1c40f;
             background: rgba(241, 196, 15, 0.15);
+            padding: 1px 4px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }}
+        .random-badge {{
+            font-size: 0.65em;
+            font-weight: 700;
+            color: #e67e22;
+            background: rgba(230, 126, 34, 0.15);
+            padding: 1px 4px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }}
+        .dc-badge {{
+            font-size: 0.65em;
+            font-weight: 700;
+            color: #e74c3c;
+            background: rgba(231, 76, 60, 0.15);
             padding: 1px 4px;
             border-radius: 3px;
             vertical-align: middle;
@@ -443,6 +469,17 @@ def generate_html(draft_data, dem_file):
             meta = f"Ability ID: {draft_ability_id}"
             css_class = "ability-pick ult-pick" if is_ult else "ability-pick"
 
+        if pick.get("is_random"):
+            content += ' <span class="random-badge">RANDOM</span>'
+        if pick.get("picker_disconnected"):
+            content += ' <span class="dc-badge">DC</span>'
+        duration = pick.get("pick_duration")
+        if duration is not None:
+            meta += f" &middot; took {duration}s"
+        orig_slot = pick.get("original_player_slot")
+        if orig_slot is not None:
+            meta += f" &middot; seat swapped from {get_player_label(orig_slot)}"
+
         html_content += f'''            <div class="pick {css_class}" style="border-left-color: {color}">
                 <div class="pick-number">#{idx}</div>
                 <div class="pick-time">{time_str}</div>
@@ -479,6 +516,10 @@ def generate_html(draft_data, dem_file):
             <div class="stat-box">
                 <div class="stat-value">{dire_ability_picks}</div>
                 <div class="stat-label">Dire Ability Picks</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{num_random}</div>
+                <div class="stat-label">Timeout (Random) Picks</div>
             </div>
         </div>
     </div>
