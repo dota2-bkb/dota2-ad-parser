@@ -50,7 +50,7 @@ public class DraftExtractor {
         }
 
         if (in == null) {
-            System.err.println("Usage: java -jar clarity-ad-parser.jar --in /path/to/match.dem --json");
+            System.err.println("Usage: java -jar clarity-ad-parser.jar --in /path/to/match.dem");
             System.exit(2);
         }
 
@@ -62,7 +62,6 @@ public class DraftExtractor {
         ExtractProcessor proc = new ExtractProcessor();
         new SimpleRunner(new MappedFileSource(in.toFile())).runWith(proc);
         Result result = new Result(proc.buildPoolItems(), proc.buildHeroPool(), proc.buildPicks(), proc.buildHeroPicks(), proc.buildAbilityMappings());
-
         writeJson(result, System.out);
     }
 
@@ -104,6 +103,13 @@ class ExtractProcessor {
     private boolean draftEnded = false;
     private Entity gamerules = null;
 
+    // Draft meta tracking
+    private int lastRoundNumber = -1;
+    private int lastAdvanceSteps = -1;
+    private int lastPhase = -1;
+    private boolean lastHasPicked = false;
+    private int turnStartTick = -1;
+
     private static final int GAME_STATE_PICKING = 2;
     private static final int UNPICKED_PLAYER_ID = 20;
 
@@ -131,8 +137,12 @@ class ExtractProcessor {
             }
 
             // Track picks during draft
+            // trackPicks runs first so it can read turnStartTick before trackDraftMeta
+            // advances it for the next turn (matters for random picks where advance
+            // change and playerID change happen in the same entity update)
             if (inDraft && state == GAME_STATE_PICKING) {
                 trackPicks(ctx, entity);
+                trackDraftMeta(ctx, entity);
             }
 
             // End draft tracking when state changes
@@ -275,6 +285,28 @@ class ExtractProcessor {
         return result.toString();
     }
 
+    private void trackDraftMeta(Context ctx, Entity gamerules) {
+        Integer advance = safeInt(gamerules.getProperty("m_pGameRules.m_nAbilityDraftAdvanceSteps"));
+        Integer round = safeInt(gamerules.getProperty("m_pGameRules.m_nAbilityDraftRoundNumber"));
+        Integer phase = safeInt(gamerules.getProperty("m_pGameRules.m_nAbilityDraftPhase"));
+        Object hasPicked = gamerules.getProperty("m_pGameRules.m_bAbilityDraftCurrentPlayerHasPicked");
+
+        int a = advance != null ? advance : -1;
+        int r = round != null ? round : -1;
+        int p = phase != null ? phase : -1;
+        boolean hp = hasPicked instanceof Boolean ? (Boolean) hasPicked : false;
+
+        // New turn starts: advance/round/phase changed and hasPicked=false
+        if (!hp && (p == 0 || p == 1) && (a != lastAdvanceSteps || r != lastRoundNumber || p != lastPhase)) {
+            turnStartTick = ctx.getTick();
+        }
+
+        lastAdvanceSteps = a;
+        lastRoundNumber = r;
+        lastPhase = p;
+        lastHasPicked = hp;
+    }
+
     private void extractPool(Entity gamerules) {
         // Read all abilities from m_pGameRules.m_AbilityDraftAbilities array
         for (int i = 0; i < 256; i++) {
@@ -291,7 +323,7 @@ class ExtractProcessor {
             }
 
             Map<String, Object> poolItem = new HashMap<>();
-            poolItem.put("ability_id", abilityId);
+            poolItem.put("draft_ability_id", abilityId);
             poolItems.add(poolItem);
 
             abilityIndexToPlayerID.put(i, UNPICKED_PLAYER_ID);
@@ -320,6 +352,10 @@ class ExtractProcessor {
     }
 
     private void trackPicks(Context ctx, Entity gamerules) {
+        // Read hasPicked once for all pick detections in this update
+        Object hasPickedObj = gamerules.getProperty("m_pGameRules.m_bAbilityDraftCurrentPlayerHasPicked");
+        boolean hasPicked = hasPickedObj instanceof Boolean ? (Boolean) hasPickedObj : false;
+
         // Track hero picks
         for (int i = 0; i < heroPool.size(); i++) {
             String indexStr = String.format("%04d", i);
@@ -345,10 +381,15 @@ class ExtractProcessor {
                 Integer heroId = safeInt(gamerules.getProperty(heroIdProp));
 
                 if (heroId != null && heroId != 0) {
+                    boolean isRandom = !hasPicked;
+                    int pickDuration = turnStartTick >= 0 ? ctx.getTick() - turnStartTick : -1;
+
                     Map<String, Object> heroPick = new HashMap<>();
                     heroPick.put("tick", ctx.getTick());
                     heroPick.put("hero_id", heroId);
                     heroPick.put("player_slot", convertPlayerIdToSlot(currentPlayerId));
+                    heroPick.put("is_random", isRandom);
+                    heroPick.put("pick_duration", pickDuration);
                     heroPicks.add(heroPick);
 
                     heroIndexToPlayerID.put(i, currentPlayerId);
@@ -357,6 +398,7 @@ class ExtractProcessor {
         }
 
         // Track ability picks
+
         for (int i = 0; i < poolItems.size(); i++) {
             String indexStr = String.format("%04d", i);
             String playerIdProp = "m_pGameRules.m_AbilityDraftAbilities." + indexStr + ".m_unPlayerID";
@@ -382,11 +424,15 @@ class ExtractProcessor {
 
                 if (abilityId != null) {
                     int playerSlot = convertPlayerIdToSlot(currentPlayerId);
+                    boolean isRandom = !hasPicked;
+                    int pickDuration = turnStartTick >= 0 ? ctx.getTick() - turnStartTick : -1;
 
                     Map<String, Object> pick = new HashMap<>();
                     pick.put("tick", ctx.getTick());
-                    pick.put("ability_id", abilityId);
+                    pick.put("draft_ability_id", abilityId);
                     pick.put("player_slot", playerSlot);
+                    pick.put("is_random", isRandom);
+                    pick.put("pick_duration", pickDuration);
                     picks.add(pick);
 
                     // Track assignment for later mapping

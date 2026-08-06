@@ -119,7 +119,7 @@ def generate_html(draft_data, dem_file):
             "type": "ability",
             "tick": pick.get("tick", 0),
             "player_slot": pick.get("player_slot", 0),
-            "ability_id": pick.get("ability_id", 0),
+            "draft_ability_id": pick.get("draft_ability_id", 0),
         })
 
     # Sort by tick (chronological order)
@@ -397,7 +397,7 @@ def generate_html(draft_data, dem_file):
 
     # Add ability pool items
     for pool_item in pool_items:
-        draft_ability_id = pool_item.get("ability_id", 0)
+        draft_ability_id = pool_item.get("draft_ability_id", 0)
         ability_name = get_ability_info(draft_ability_id, ability_mappings)
         is_ult = draft_ability_id in ult_ids
         ult_class = " pool-item-ult" if is_ult else ""
@@ -435,7 +435,7 @@ def generate_html(draft_data, dem_file):
             meta = f"Hero ID: {hero_id}"
             css_class = "hero-pick"
         else:  # ability
-            draft_ability_id = pick.get("ability_id", 0)
+            draft_ability_id = pick.get("draft_ability_id", 0)
             ability_name = get_ability_info(draft_ability_id, ability_mappings)
             is_ult = draft_ability_id in ult_ids
             ult_suffix = ' <span class="ult-badge">ULT</span>' if is_ult else ""
