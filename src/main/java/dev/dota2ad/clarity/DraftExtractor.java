@@ -8,8 +8,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import skadistats.clarity.event.Insert;
 import skadistats.clarity.model.Entity;
@@ -28,13 +30,15 @@ public class DraftExtractor {
         List<Object> picks;
         List<Object> heroPicks;
         List<Object> abilityMappings;
+        List<Object> swaps;
 
-        Result(List<Object> poolItems, List<Object> heroPool, List<Object> picks, List<Object> heroPicks, List<Object> abilityMappings) {
+        Result(List<Object> poolItems, List<Object> heroPool, List<Object> picks, List<Object> heroPicks, List<Object> abilityMappings, List<Object> swaps) {
             this.poolItems = poolItems;
             this.heroPool = heroPool;
             this.picks = picks;
             this.heroPicks = heroPicks;
             this.abilityMappings = abilityMappings;
+            this.swaps = swaps;
         }
     }
 
@@ -61,7 +65,7 @@ public class DraftExtractor {
 
         ExtractProcessor proc = new ExtractProcessor();
         new SimpleRunner(new MappedFileSource(in.toFile())).runWith(proc);
-        Result result = new Result(proc.buildPoolItems(), proc.buildHeroPool(), proc.buildPicks(), proc.buildHeroPicks(), proc.buildAbilityMappings());
+        Result result = new Result(proc.buildPoolItems(), proc.buildHeroPool(), proc.buildPicks(), proc.buildHeroPicks(), proc.buildAbilityMappings(), proc.buildSwaps());
         writeJson(result, System.out);
     }
 
@@ -73,6 +77,9 @@ public class DraftExtractor {
         output.put("picks", res.picks);
         output.put("hero_picks", res.heroPicks);
         output.put("ability_mappings", res.abilityMappings);
+        if (!res.swaps.isEmpty()) {
+            output.put("swaps", res.swaps);
+        }
 
         mapper.writerWithDefaultPrettyPrinter().writeValue(out, output);
     }
@@ -97,7 +104,15 @@ class ExtractProcessor {
     private final Map<Integer, Map<String, Integer>> draftAbilityAssignments = new HashMap<>();
     // Track resolved abilities: (player_slot, ability_slot) -> ability_key
     private final Map<String, String> resolvedAbilities = new HashMap<>();
-
+    // heroID -> heroKey mapping (stable across swaps, built from entities)
+    private final Map<Integer, String> heroIdToHeroKey = new HashMap<>();
+    // Track which hero class names we've already processed for heroIdToHeroKey
+    private final Set<String> processedHeroClasses = new HashSet<>();
+    // Cache heroClassName -> draft-time playerSlot (handles early swaps where entity playerID is post-swap)
+    private final Map<String, Integer> heroClassToDraftSlot = new HashMap<>();
+    // Track hero pool playerIDs after draft to detect swap timing
+    private final Map<Integer, Integer> postDraftHeroPlayerID = new HashMap<>();
+    private final List<Map<String, Object>> swaps = new ArrayList<>();
     private boolean poolExtracted = false;
     private boolean inDraft = false;
     private boolean draftEnded = false;
@@ -150,6 +165,18 @@ class ExtractProcessor {
                 inDraft = false;
                 draftEnded = true;
                 captureFinalSlotAssignments(entity);
+                // Snapshot hero pool playerIDs at draft end for swap detection
+                for (int i = 0; i < heroPool.size(); i++) {
+                    Integer pid = heroIndexToPlayerID.get(i);
+                    if (pid != null) {
+                        postDraftHeroPlayerID.put(i, pid);
+                    }
+                }
+            }
+
+            // Track hero pool playerID changes after draft to detect swap timing
+            if (draftEnded) {
+                trackSwaps(ctx, entity);
             }
         }
 
@@ -157,6 +184,50 @@ class ExtractProcessor {
         if (draftEnded && dtName.startsWith("CDOTA_Unit_Hero_")) {
             processHeroEntity(entity, dtName);
         }
+    }
+
+    /**
+     * Build draftPlayerSlot -> finalPlayerSlot swap mapping.
+     * Compares who drafted each hero (heroIndexToPlayerID) with who plays it
+     * after swaps (gamerules final state). In AD swaps, both hero body and
+     * abilities follow the swap.
+     */
+    private Map<Integer, Integer> buildSwapMap() {
+        Map<Integer, Integer> swapMap = new HashMap<>();
+        for (int i = 0; i < heroPool.size(); i++) {
+            String idx = String.format("%04d", i);
+            String playerIdProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_unPlayerID";
+            if (!gamerules.hasProperty(playerIdProp)) continue;
+            Integer finalPlayerId = safeInt(gamerules.getProperty(playerIdProp));
+            Integer draftPlayerId = heroIndexToPlayerID.get(i);
+            if (finalPlayerId == null || draftPlayerId == null) continue;
+            if (finalPlayerId == UNPICKED_PLAYER_ID || draftPlayerId == UNPICKED_PLAYER_ID) continue;
+            if (!finalPlayerId.equals(draftPlayerId)) {
+                int draftSlot = convertPlayerIdToSlot(draftPlayerId);
+                int finalSlot = convertPlayerIdToSlot(finalPlayerId);
+                swapMap.put(draftSlot, finalSlot);
+            }
+        }
+        return swapMap;
+    }
+
+    /**
+     * Build playerID -> heroID mapping from gamerules post-swap state.
+     */
+    private Map<Integer, Integer> buildPlayerIdToHeroId() {
+        Map<Integer, Integer> map = new HashMap<>();
+        for (int i = 0; i < heroPool.size(); i++) {
+            String idx = String.format("%04d", i);
+            String heroIdProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_nHeroID";
+            String playerIdProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_unPlayerID";
+            if (!gamerules.hasProperty(heroIdProp)) continue;
+            Integer heroId = safeInt(gamerules.getProperty(heroIdProp));
+            Integer playerId = safeInt(gamerules.getProperty(playerIdProp));
+            if (heroId != null && playerId != null && playerId != UNPICKED_PLAYER_ID) {
+                map.put(playerId, heroId);
+            }
+        }
+        return map;
     }
 
     private void processHeroEntity(Entity hero, String heroClassName) {
@@ -172,16 +243,34 @@ class ExtractProcessor {
             return;
         }
 
-        int playerSlot = convertPlayerIdToSlot(playerId);
         String heroKey = convertHeroClassNameToKey(heroClassName);
 
-        // Update hero_picks with hero_key
-        for (Map<String, Object> heroPick : heroPicks) {
-            if ((Integer) heroPick.get("player_slot") == playerSlot && !heroPick.containsKey("hero_key")) {
-                heroPick.put("hero_key", heroKey);
-                break;
+        // Find the gamerules hero pool entry matching this entity's playerID.
+        // From that, get the draft-time playerID (which may differ for early swaps
+        // where entity playerIDs are already post-swap).
+        if (!processedHeroClasses.contains(heroClassName)) {
+            processedHeroClasses.add(heroClassName);
+            for (int i = 0; i < heroPool.size(); i++) {
+                String idx = String.format("%04d", i);
+                String pidProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_unPlayerID";
+                String hidProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_nHeroID";
+                if (!gamerules.hasProperty(pidProp)) continue;
+                Integer grPid = safeInt(gamerules.getProperty(pidProp));
+                if (grPid != null && grPid.equals(playerId)) {
+                    Integer heroId = safeInt(gamerules.getProperty(hidProp));
+                    if (heroId != null) {
+                        heroIdToHeroKey.put(heroId, heroKey);
+                    }
+                    // Cache draft-time slot for ability resolution
+                    Integer draftPid = heroIndexToPlayerID.get(i);
+                    if (draftPid != null) {
+                        heroClassToDraftSlot.put(heroClassName, convertPlayerIdToSlot(draftPid));
+                    }
+                    break;
+                }
             }
         }
+        int draftPlayerSlot = heroClassToDraftSlot.getOrDefault(heroClassName, convertPlayerIdToSlot(playerId));
 
         // Extract abilities from m_vecAbilities - slots 0, 1, 2, 5 are the draft abilities
         int[] heroSlots = {0, 1, 2, 5};
@@ -189,7 +278,7 @@ class ExtractProcessor {
             int abilitySlot = i;
             int heroSlot = heroSlots[i];
 
-            String slotKey = playerSlot + ":" + abilitySlot;
+            String slotKey = draftPlayerSlot + ":" + abilitySlot;
 
             // Skip if already resolved
             if (resolvedAbilities.containsKey(slotKey)) {
@@ -359,7 +448,6 @@ class ExtractProcessor {
         // Track hero picks
         for (int i = 0; i < heroPool.size(); i++) {
             String indexStr = String.format("%04d", i);
-            String heroIdProp = "m_pGameRules.m_AbilityDraftHeroes." + indexStr + ".m_nHeroID";
             String playerIdProp = "m_pGameRules.m_AbilityDraftHeroes." + indexStr + ".m_unPlayerID";
 
             if (!gamerules.hasProperty(playerIdProp)) {
@@ -378,22 +466,17 @@ class ExtractProcessor {
 
             // Detect pick: playerID changed from 20 to actual player ID
             if (previousPlayerId == UNPICKED_PLAYER_ID && currentPlayerId != UNPICKED_PLAYER_ID) {
-                Integer heroId = safeInt(gamerules.getProperty(heroIdProp));
+                boolean isRandom = !hasPicked;
+                int pickDuration = turnStartTick >= 0 ? ctx.getTick() - turnStartTick : -1;
 
-                if (heroId != null && heroId != 0) {
-                    boolean isRandom = !hasPicked;
-                    int pickDuration = turnStartTick >= 0 ? ctx.getTick() - turnStartTick : -1;
+                Map<String, Object> heroPick = new HashMap<>();
+                heroPick.put("tick", ctx.getTick());
+                heroPick.put("player_slot", convertPlayerIdToSlot(currentPlayerId));
+                heroPick.put("is_random", isRandom);
+                heroPick.put("pick_duration", pickDuration);
+                heroPicks.add(heroPick);
 
-                    Map<String, Object> heroPick = new HashMap<>();
-                    heroPick.put("tick", ctx.getTick());
-                    heroPick.put("hero_id", heroId);
-                    heroPick.put("player_slot", convertPlayerIdToSlot(currentPlayerId));
-                    heroPick.put("is_random", isRandom);
-                    heroPick.put("pick_duration", pickDuration);
-                    heroPicks.add(heroPick);
-
-                    heroIndexToPlayerID.put(i, currentPlayerId);
-                }
+                heroIndexToPlayerID.put(i, currentPlayerId);
             }
         }
 
@@ -477,6 +560,31 @@ class ExtractProcessor {
         }
     }
 
+    private void trackSwaps(Context ctx, Entity gamerules) {
+        for (int i = 0; i < heroPool.size(); i++) {
+            String idx = String.format("%04d", i);
+            String playerIdProp = "m_pGameRules.m_AbilityDraftHeroes." + idx + ".m_unPlayerID";
+            if (!gamerules.hasProperty(playerIdProp)) continue;
+            Integer currentPlayerId = safeInt(gamerules.getProperty(playerIdProp));
+            if (currentPlayerId == null || currentPlayerId == UNPICKED_PLAYER_ID) continue;
+            Integer previousPlayerId = postDraftHeroPlayerID.get(i);
+            if (previousPlayerId == null) continue;
+            if (!currentPlayerId.equals(previousPlayerId)) {
+                int fromSlot = convertPlayerIdToSlot(previousPlayerId);
+                int toSlot = convertPlayerIdToSlot(currentPlayerId);
+                // Only record once per pair (lower slot first)
+                if (fromSlot < toSlot) {
+                    Map<String, Object> swap = new HashMap<>();
+                    swap.put("tick", ctx.getTick());
+                    swap.put("slot_a", fromSlot);
+                    swap.put("slot_b", toSlot);
+                    swaps.add(swap);
+                }
+                postDraftHeroPlayerID.put(i, currentPlayerId);
+            }
+        }
+    }
+
     public List<Object> buildPoolItems() {
         return new ArrayList<>(poolItems);
     }
@@ -486,14 +594,52 @@ class ExtractProcessor {
     }
 
     public List<Object> buildPicks() {
+        Map<Integer, Integer> swapMap = buildSwapMap();
+        if (!swapMap.isEmpty()) {
+            for (Map<String, Object> pick : picks) {
+                int slot = (Integer) pick.get("player_slot");
+                int newSlot = swapMap.getOrDefault(slot, slot);
+                if (slot != newSlot) {
+                    pick.put("original_player_slot", slot);
+                }
+                pick.put("player_slot", newSlot);
+            }
+        }
         return new ArrayList<>(picks);
     }
 
     public List<Object> buildHeroPicks() {
+        // Apply swap map first: remap player_slots to post-swap state
+        Map<Integer, Integer> swapMap = buildSwapMap();
+        if (!swapMap.isEmpty()) {
+            for (Map<String, Object> heroPick : heroPicks) {
+                int slot = (Integer) heroPick.get("player_slot");
+                int newSlot = swapMap.getOrDefault(slot, slot);
+                if (slot != newSlot) {
+                    heroPick.put("original_player_slot", slot);
+                }
+                heroPick.put("player_slot", newSlot);
+            }
+        }
+        // Resolve hero_id and hero_key from gamerules final state (after all swaps)
+        Map<Integer, Integer> pidToHeroId = buildPlayerIdToHeroId();
+        for (Map<String, Object> heroPick : heroPicks) {
+            int playerSlot = (Integer) heroPick.get("player_slot");
+            int playerId = playerSlot < 128 ? playerSlot * 2 : 10 + (playerSlot - 128) * 2;
+            Integer heroId = pidToHeroId.get(playerId);
+            if (heroId != null) {
+                heroPick.put("hero_id", heroId);
+                String heroKey = heroIdToHeroKey.get(heroId);
+                if (heroKey != null) {
+                    heroPick.put("hero_key", heroKey);
+                }
+            }
+        }
         return new ArrayList<>(heroPicks);
     }
 
     public List<Object> buildAbilityMappings() {
+        Map<Integer, Integer> swapMap = buildSwapMap();
         // Build ability mappings from draft ability IDs to resolved ability keys
         for (Map.Entry<Integer, Map<String, Integer>> entry : draftAbilityAssignments.entrySet()) {
             Integer draftAbilityId = entry.getKey();
@@ -506,13 +652,18 @@ class ExtractProcessor {
                 continue;
             }
 
+            // Lookup uses draft-time slot (matches how resolvedAbilities was stored)
             String slotKey = playerSlot + ":" + abilitySlot;
             String abilityKey = resolvedAbilities.get(slotKey);
 
             if (abilityKey != null) {
+                int finalSlot = swapMap.getOrDefault(playerSlot, playerSlot);
                 Map<String, Object> mapping = new HashMap<>();
+                if (finalSlot != playerSlot) {
+                    mapping.put("original_player_slot", playerSlot);
+                }
                 mapping.put("draft_ability_id", draftAbilityId);
-                mapping.put("player_slot", playerSlot);
+                mapping.put("player_slot", finalSlot);
                 mapping.put("ability_slot", abilitySlot);
                 mapping.put("ability_key", abilityKey);
                 abilityMappings.add(mapping);
@@ -520,6 +671,10 @@ class ExtractProcessor {
         }
 
         return new ArrayList<>(abilityMappings);
+    }
+
+    public List<Object> buildSwaps() {
+        return new ArrayList<>(swaps);
     }
 
     private static Integer safeInt(Object o) {
