@@ -125,8 +125,18 @@ class ExtractProcessor {
     private boolean lastHasPicked = false;
     private int turnStartTick = -1;
 
+    // Per-player connection state, indexed by m_unPlayerID (0,2,4,6,8 radiant;
+    // 10,12,14,16,18 dire). Updated whenever CDOTA_PlayerResource fires.
+    // Value semantics: 2 = CONNECTED, 3 = DISCONNECTED, 4 = ABANDONED.
+    // Used at pick time to populate the picker_disconnected flag on each
+    // emitted pick (only meaningful when is_random=True; every random pick
+    // is a server-side timeout, this flag splits timeouts by whether the
+    // player was still online at the moment).
+    private final Map<Integer, Integer> playerIdToConnectionState = new HashMap<>();
+
     private static final int GAME_STATE_PICKING = 2;
     private static final int UNPICKED_PLAYER_ID = 20;
+    private static final int CONNECTION_STATE_CONNECTED = 2;
 
     @OnEntityUpdated
     public void onEntityUpdated(Context ctx, Entity entity, FieldPath[] indices, int count) {
@@ -184,6 +194,26 @@ class ExtractProcessor {
         if (draftEnded && dtName.startsWith("CDOTA_Unit_Hero_")) {
             processHeroEntity(entity, dtName);
         }
+
+        // Track per-player connection state from CDOTA_PlayerResource.
+        // m_vecPlayerData indices 0-4 map to player_id 0,2,4,6,8 (radiant);
+        // 5-9 map to player_id 10,12,14,16,18 (dire).
+        if (dtName.equals("CDOTA_PlayerResource")) {
+            for (int idx = 0; idx < 10; idx++) {
+                String key = String.format("m_vecPlayerData.%04d.m_iConnectionState", idx);
+                if (!entity.hasProperty(key)) continue;
+                Integer state = safeInt(entity.getProperty(key));
+                if (state == null) continue;
+                int playerId = idx < 5 ? idx * 2 : 10 + (idx - 5) * 2;
+                playerIdToConnectionState.put(playerId, state);
+            }
+        }
+    }
+
+    /** Whether the given player was disconnected/abandoned at the current tick. */
+    private boolean isPlayerDisconnected(int playerId) {
+        Integer state = playerIdToConnectionState.get(playerId);
+        return state != null && state != CONNECTION_STATE_CONNECTED;
     }
 
     /**
@@ -467,12 +497,14 @@ class ExtractProcessor {
             // Detect pick: playerID changed from 20 to actual player ID
             if (previousPlayerId == UNPICKED_PLAYER_ID && currentPlayerId != UNPICKED_PLAYER_ID) {
                 boolean isRandom = !hasPicked;
+                boolean pickerDisconnected = isPlayerDisconnected(currentPlayerId);
                 int pickDuration = turnStartTick >= 0 ? ctx.getTick() - turnStartTick : -1;
 
                 Map<String, Object> heroPick = new HashMap<>();
                 heroPick.put("tick", ctx.getTick());
                 heroPick.put("player_slot", convertPlayerIdToSlot(currentPlayerId));
                 heroPick.put("is_random", isRandom);
+                heroPick.put("picker_disconnected", pickerDisconnected);
                 heroPick.put("pick_duration", pickDuration);
                 heroPicks.add(heroPick);
 
@@ -508,6 +540,7 @@ class ExtractProcessor {
                 if (abilityId != null) {
                     int playerSlot = convertPlayerIdToSlot(currentPlayerId);
                     boolean isRandom = !hasPicked;
+                    boolean pickerDisconnected = isPlayerDisconnected(currentPlayerId);
                     int pickDuration = turnStartTick >= 0 ? ctx.getTick() - turnStartTick : -1;
 
                     Map<String, Object> pick = new HashMap<>();
@@ -515,6 +548,7 @@ class ExtractProcessor {
                     pick.put("draft_ability_id", abilityId);
                     pick.put("player_slot", playerSlot);
                     pick.put("is_random", isRandom);
+                    pick.put("picker_disconnected", pickerDisconnected);
                     pick.put("pick_duration", pickDuration);
                     picks.add(pick);
 
