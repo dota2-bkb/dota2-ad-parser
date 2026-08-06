@@ -6,6 +6,7 @@ A tool to parse Dota 2 Ability Draft replay files (.dem) and generate HTML visua
 
 - Extracts complete draft data from replay files
 - Automatically resolves hero and ability names from replay data (with no external dependencies)
+- Flags timeout (server-random) picks, per-pick decision times, picker disconnects, and post-draft seat swaps
 - Generates HTML visualizations with chronological draft timeline
 
 ## Requirements
@@ -62,10 +63,10 @@ Options:
 ./parse_draft.py match_12345.dem --jar /path/to/parser.jar
 
 # Try the included sample
-./parse_draft.py examples/8497319569.dem
+./parse_draft.py examples/8843399517.dem
 ```
 
-A sample replay and its generated HTML output are included in the `examples/` folder. [View sample output](https://html-preview.github.io/?url=https://github.com/dota2-bkb/dota2-ad-parser/blob/main/examples/8497319569.html)
+A sample replay and its generated HTML output are included in the `examples/` folder. [View sample output](https://html-preview.github.io/?url=https://github.com/dota2-bkb/dota2-ad-parser/blob/main/examples/8843399517.html)
 
 ## Output
 
@@ -79,6 +80,8 @@ The tool generates a single HTML file containing:
   - Pick type (HERO or ABILITY)
   - Player (team and position)
   - Name of picked hero/ability
+  - RANDOM badge on timeout (server-assigned) picks, DC badge when the picker was disconnected
+  - Per-pick decision time, and the original seat for post-draft hero swaps
   - Internal ID for reference
 - **Statistics**: Summary boxes showing pool sizes and pick counts per team for sanity check
 
@@ -88,8 +91,8 @@ The tool generates a single HTML file containing:
 dota2-ad-parser/
 ├── parse_draft.py                  # Python script
 ├── examples/
-│   ├── 8497319569.dem             # Sample replay
-│   └── 8497319569.html            # Sample output
+│   ├── 8843399517.dem             # Sample replay
+│   └── 8843399517.html            # Sample output
 ├── src/
 │   └── main/
 │       └── java/
@@ -110,13 +113,13 @@ The script automatically detects the JAR in `target/` after building.
 1. **Extract**: The Java parser (using Clarity library) reads the .dem file and extracts:
    - Ability pool (draft_ability_id)
    - Hero pool (hero_id)
-   - Pick order with timestamps
-   - Final ability assignments (player_slot, ability_slot)
-   - Hero and ability names from entity class names
+   - Pick order with timestamps, timeout flags, decision times, and picker connection state
+   - Final ability assignments (player_slot, ability_slot), after post-draft swaps
+   - Hero and ability names from the replay's EntityNames string table
 
-2. **Format**: The Python script formats entity names:
-   - `CDOTA_Unit_Hero_Shadow_Fiend` → "Shadow Fiend"
-   - `CDOTA_Ability_Tinker_Laser` → "Tinker Laser"
+2. **Format**: The Python script formats the extracted names:
+   - `shadow_fiend` → "Shadow Fiend"
+   - `tinker_laser` → "Tinker Laser"
 
 3. **Generate**: Creates a single HTML file with:
    - Embedded CSS styling
@@ -129,7 +132,7 @@ The script automatically detects the JAR in `target/` after building.
 
 - **Name Resolution**: The parser can only resolve human-readable names (e.g., "Shadow Fiend", "Tinker Laser") for heroes and abilities that were **actually picked** during the draft. Pool items that were available but not picked will only display their internal IDs.
 
-  This is because names are extracted from entity class names that are only created when a hero/ability is picked. Unpicked pool items only have their numeric IDs available in the replay data.
+  This is because names are read from the entities themselves, which only spawn when a hero/ability is picked. Unpicked pool items only have their numeric IDs available in the replay data.
 
   **Workaround**: You can build a complete ID-to-name mapping by parsing multiple replays and aggregating the mappings across different drafts where different heroes/abilities were picked.
 

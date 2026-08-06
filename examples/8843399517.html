@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draft - 8843399517</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0e27;
+            color: #e8e8e8;
+            padding: 15px;
+            line-height: 1.4;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #151932;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            padding: 20px;
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 5px;
+            font-size: 1.8em;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .match-info {
+            text-align: center;
+            color: #8892b0;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #1e2746;
+            font-size: 0.9em;
+        }
+
+        h2 {
+            color: #64ffda;
+            margin: 20px 0 10px 0;
+            font-size: 1.1em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .pool {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 6px;
+            margin-bottom: 25px;
+        }
+
+        .pool-item {
+            background: #1e2746;
+            color: #e8e8e8;
+            padding: 6px 8px;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 0.8em;
+            border: 1px solid #2a3554;
+            transition: all 0.15s;
+        }
+
+        .pool-item:hover {
+            background: #2a3554;
+            border-color: #64ffda;
+        }
+
+        .pool-item-ult {
+            border-color: #f1c40f;
+            background: #2a2714;
+        }
+
+        .pool-item-ult:hover {
+            border-color: #f1c40f;
+            background: #3a3724;
+        }
+
+        .ult-badge {
+            font-size: 0.65em;
+            font-weight: 700;
+            color: #f1c40f;
+            background: rgba(241, 196, 15, 0.15);
+            padding: 1px 4px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }
+        .random-badge {
+            font-size: 0.65em;
+            font-weight: 700;
+            color: #e67e22;
+            background: rgba(230, 126, 34, 0.15);
+            padding: 1px 4px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }
+        .dc-badge {
+            font-size: 0.65em;
+            font-weight: 700;
+            color: #e74c3c;
+            background: rgba(231, 76, 60, 0.15);
+            padding: 1px 4px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }
+
+        .pick.ult-pick {
+            border-left-color: #f1c40f !important;
+        }
+
+        .pool-item-name {
+            margin-bottom: 2px;
+            font-weight: 500;
+        }
+
+        .pool-item-ids {
+            font-size: 0.75em;
+            opacity: 0.6;
+        }
+
+        .picks-container {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .pick {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #1e2746;
+            border-radius: 4px;
+            padding: 6px 10px;
+            border-left: 3px solid;
+            transition: all 0.15s;
+            font-size: 0.85em;
+        }
+
+        .pick:hover {
+            background: #2a3554;
+            transform: translateX(2px);
+        }
+
+        .pick.hero-pick {
+            background: #2d1f1a;
+            border-left-color: #ff6b35;
+        }
+
+        .pick.hero-pick:hover {
+            background: #3d2f2a;
+        }
+
+        .pick.ability-pick {
+            border-left-color: #64ffda;
+        }
+
+        .pick-number {
+            font-weight: 600;
+            width: 30px;
+            color: #8892b0;
+            flex-shrink: 0;
+            font-size: 0.9em;
+        }
+
+        .pick-time {
+            font-family: 'Courier New', monospace;
+            color: #64ffda;
+            width: 45px;
+            flex-shrink: 0;
+            font-size: 0.8em;
+        }
+
+        .pick-type {
+            font-weight: 600;
+            font-size: 0.7em;
+            text-transform: uppercase;
+            width: 50px;
+            flex-shrink: 0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            text-align: center;
+            letter-spacing: 0.3px;
+        }
+
+        .pick-type.hero {
+            background: #ff6b35;
+            color: #fff;
+        }
+
+        .pick-type.ability {
+            background: #64ffda;
+            color: #0a0e27;
+        }
+
+        .pick-player {
+            font-weight: 500;
+            width: 100px;
+            flex-shrink: 0;
+            font-size: 0.85em;
+        }
+
+        .pick-content {
+            flex-grow: 1;
+            font-weight: 500;
+        }
+
+        .pick-meta {
+            font-size: 0.75em;
+            color: #8892b0;
+            background: #0a0e27;
+            padding: 2px 8px;
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #1e2746;
+        }
+
+        .stat-box {
+            background: #1e2746;
+            border: 1px solid #2a3554;
+            padding: 12px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #64ffda;
+            margin-bottom: 3px;
+        }
+
+        .stat-label {
+            font-size: 0.75em;
+            color: #8892b0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ability Draft</h1>
+        <div class="match-info">
+            8843399517
+        </div>
+
+        <h2>Hero Pool (12)</h2>
+        <div class="pool">
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Hero 28</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Juggernaut</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Silencer</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Lina</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Huskar</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Pugna</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Hero 62</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Dark Willow</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Phantom Assassin</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Razor</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Antimage</div>
+            <div class="pool-item" style="background: #2d1f1a; border-color: #ff6b35;">Ringmaster</div>
+        </div>
+
+        <h2>Ability Pool (48)</h2>
+        <div class="pool">
+            <div class="pool-item">
+                <div class="pool-item-name">Slardar Sprint</div>
+                <div class="pool-item-ids">ID: 10228</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Slardar Slithereen Crush</div>
+                <div class="pool-item-ids">ID: 10230</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Slardar Bash</div>
+                <div class="pool-item-ids">ID: 10232</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Juggernaut Blade Fury</div>
+                <div class="pool-item-ids">ID: 10056</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Juggernaut Healing Ward</div>
+                <div class="pool-item-ids">ID: 10058</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Juggernaut Blade Dance</div>
+                <div class="pool-item-ids">ID: 10054</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Silencer Curse Of The Silent</div>
+                <div class="pool-item-ids">ID: 10754</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Silencer Glaives Of Wisdom</div>
+                <div class="pool-item-ids">ID: 10756</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Silencer Last Word</div>
+                <div class="pool-item-ids">ID: 10758</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Lina Dragon Slave</div>
+                <div class="pool-item-ids">ID: 10080</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Lina Light Strike Array</div>
+                <div class="pool-item-ids">ID: 10082</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Lina Fiery Soul</div>
+                <div class="pool-item-ids">ID: 10084</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Huskar Inner Fire</div>
+                <div class="pool-item-ids">ID: 14600</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Huskar Burning Spear</div>
+                <div class="pool-item-ids">ID: 10544</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Huskar Berserkers Blood</div>
+                <div class="pool-item-ids">ID: 10546</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Pugna Nether Blast</div>
+                <div class="pool-item-ids">ID: 10372</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Pugna Decrepify</div>
+                <div class="pool-item-ids">ID: 10374</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 10376</div>
+                <div class="pool-item-ids">ID: 10376</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Bounty Hunter Shuriken Toss</div>
+                <div class="pool-item-ids">ID: 2628</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Bounty Hunter Jinada</div>
+                <div class="pool-item-ids">ID: 10572</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Bounty Hunter Wind Walk</div>
+                <div class="pool-item-ids">ID: 10574</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 12678</div>
+                <div class="pool-item-ids">ID: 12678</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Dark Willow Shadow Realm</div>
+                <div class="pool-item-ids">ID: 12682</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 12684</div>
+                <div class="pool-item-ids">ID: 12684</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Phantom Assassin Stifling Dagger</div>
+                <div class="pool-item-ids">ID: 10380</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Phantom Assassin Phantom Strike</div>
+                <div class="pool-item-ids">ID: 10382</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Phantom Assassin Immaterial</div>
+                <div class="pool-item-ids">ID: 2574</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Razor Plasma Field</div>
+                <div class="pool-item-ids">ID: 10164</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Razor Static Link</div>
+                <div class="pool-item-ids">ID: 10166</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 2448</div>
+                <div class="pool-item-ids">ID: 2448</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Antimage Mana Break</div>
+                <div class="pool-item-ids">ID: 10006</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Antimage Blink</div>
+                <div class="pool-item-ids">ID: 10008</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Antimage Counterspell</div>
+                <div class="pool-item-ids">ID: 14628</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ringmaster Tame The Beasts</div>
+                <div class="pool-item-ids">ID: 704</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 766</div>
+                <div class="pool-item-ids">ID: 766</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 772</div>
+                <div class="pool-item-ids">ID: 772</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Slardar Amplify Damage <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10234</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Juggernaut Omni Slash <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10060</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Silencer Global Silence <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10760</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Lina Laguna Blade <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10086</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Huskar Life Break <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10548</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Pugna Life Drain <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10378</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Bounty Hunter Track <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10576</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Dark Willow Terrorize <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 16680</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Phantom Assassin Coup De Grace <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10386</div>
+            </div>
+            <div class="pool-item pool-item-ult">
+                <div class="pool-item-name">Razor Eye Of The Storm <span class="ult-badge">ULT</span></div>
+                <div class="pool-item-ids">ID: 10170</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 10012</div>
+                <div class="pool-item-ids">ID: 10012</div>
+            </div>
+            <div class="pool-item">
+                <div class="pool-item-name">Ability 770</div>
+                <div class="pool-item-ids">ID: 770</div>
+            </div>
+        </div>
+
+        <h2>Draft Timeline (50)</h2>
+        <div class="picks-container">
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#1</div>
+                <div class="pick-time">1:00</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #0</div>
+                <div class="pick-content">Antimage Mana Break</div>
+                <div class="pick-meta">Ability ID: 10006 &middot; took 20s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#2</div>
+                <div class="pick-time">1:07</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #2</div>
+                <div class="pick-content">Lina</div>
+                <div class="pick-meta">Hero ID: 25 &middot; took 12s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#3</div>
+                <div class="pick-time">1:14</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #3</div>
+                <div class="pick-content">Dark Willow Shadow Realm</div>
+                <div class="pick-meta">Ability ID: 12682 &middot; took 6s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#4</div>
+                <div class="pick-time">1:21</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #1</div>
+                <div class="pick-content">Slardar Bash</div>
+                <div class="pick-meta">Ability ID: 10232 &middot; took 10s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#5</div>
+                <div class="pick-time">1:31</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #1</div>
+                <div class="pick-content">Lina Fiery Soul</div>
+                <div class="pick-meta">Ability ID: 10084 &middot; took 114s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#6</div>
+                <div class="pick-time">1:42</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #4</div>
+                <div class="pick-content">Huskar Berserkers Blood <span class="random-badge">RANDOM</span></div>
+                <div class="pick-meta">Ability ID: 10546 &middot; took 210s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#7</div>
+                <div class="pick-time">1:45</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #4</div>
+                <div class="pick-content">Huskar</div>
+                <div class="pick-meta">Hero ID: 59 &middot; took 96s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#8</div>
+                <div class="pick-time">1:49</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #3</div>
+                <div class="pick-content">Antimage Blink</div>
+                <div class="pick-meta">Ability ID: 10008 &middot; took 16s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#9</div>
+                <div class="pick-time">1:59</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #2</div>
+                <div class="pick-content">Pugna Nether Blast</div>
+                <div class="pick-meta">Ability ID: 10372 &middot; took 114s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#10</div>
+                <div class="pick-time">2:04</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #0</div>
+                <div class="pick-content">Phantom Assassin Coup De Grace <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10386 &middot; took 50s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#11</div>
+                <div class="pick-time">2:18</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #0</div>
+                <div class="pick-content">Juggernaut Blade Dance</div>
+                <div class="pick-meta">Ability ID: 10054 &middot; took 98s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#12</div>
+                <div class="pick-time">2:27</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #2</div>
+                <div class="pick-content">Pugna</div>
+                <div class="pick-meta">Hero ID: 45 &middot; took 150s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#13</div>
+                <div class="pick-time">2:30</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #3</div>
+                <div class="pick-content">Silencer Glaives Of Wisdom</div>
+                <div class="pick-meta">Ability ID: 10756 &middot; took 34s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#14</div>
+                <div class="pick-time">2:38</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #4</div>
+                <div class="pick-content">Pugna Life Drain <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10378 &middot; took 60s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#15</div>
+                <div class="pick-time">2:47</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #4</div>
+                <div class="pick-content">Juggernaut Blade Fury</div>
+                <div class="pick-meta">Ability ID: 10056 &middot; took 132s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#16</div>
+                <div class="pick-time">2:53</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #1</div>
+                <div class="pick-content">Razor Plasma Field</div>
+                <div class="pick-meta">Ability ID: 10164 &middot; took 96s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#17</div>
+                <div class="pick-time">3:01</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #1</div>
+                <div class="pick-content">Bounty Hunter Jinada</div>
+                <div class="pick-meta">Ability ID: 10572 &middot; took 128s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#18</div>
+                <div class="pick-time">3:04</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #3</div>
+                <div class="pick-content">Razor Static Link</div>
+                <div class="pick-meta">Ability ID: 10166 &middot; took 4s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#19</div>
+                <div class="pick-time">3:11</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #2</div>
+                <div class="pick-content">Phantom Assassin Phantom Strike</div>
+                <div class="pick-meta">Ability ID: 10382 &middot; took 18s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#20</div>
+                <div class="pick-time">3:18</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #0</div>
+                <div class="pick-content">Phantom Assassin Stifling Dagger</div>
+                <div class="pick-meta">Ability ID: 10380 &middot; took 10s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#21</div>
+                <div class="pick-time">3:30</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #0</div>
+                <div class="pick-content">Bounty Hunter Wind Walk</div>
+                <div class="pick-meta">Ability ID: 10574 &middot; took 8s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#22</div>
+                <div class="pick-time">3:39</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #2</div>
+                <div class="pick-content">Huskar Inner Fire</div>
+                <div class="pick-meta">Ability ID: 14600 &middot; took 84s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#23</div>
+                <div class="pick-time">3:46</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #3</div>
+                <div class="pick-content">Dark Willow</div>
+                <div class="pick-meta">Hero ID: 119 &middot; took 68s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#24</div>
+                <div class="pick-time">3:51</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #1</div>
+                <div class="pick-content">Juggernaut Omni Slash <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10060 &middot; took 14s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#25</div>
+                <div class="pick-time">4:04</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #1</div>
+                <div class="pick-content">Razor</div>
+                <div class="pick-meta">Hero ID: 15 &middot; took 182s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#26</div>
+                <div class="pick-time">4:12</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #4</div>
+                <div class="pick-content">Bounty Hunter Shuriken Toss <span class="random-badge">RANDOM</span></div>
+                <div class="pick-meta">Ability ID: 2628 &middot; took 210s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#27</div>
+                <div class="pick-time">4:13</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #4</div>
+                <div class="pick-content">Lina Light Strike Array</div>
+                <div class="pick-meta">Ability ID: 10082 &middot; took 42s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#28</div>
+                <div class="pick-time">4:23</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #3</div>
+                <div class="pick-content">Bounty Hunter Track <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10576 &middot; took 132s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#29</div>
+                <div class="pick-time">4:28</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #2</div>
+                <div class="pick-content">Lina Dragon Slave</div>
+                <div class="pick-meta">Ability ID: 10080 &middot; took 82s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#30</div>
+                <div class="pick-time">4:34</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #0</div>
+                <div class="pick-content">Juggernaut</div>
+                <div class="pick-meta">Hero ID: 8 &middot; took 48s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#31</div>
+                <div class="pick-time">4:45</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #0</div>
+                <div class="pick-content">Phantom Assassin Immaterial</div>
+                <div class="pick-meta">Ability ID: 2574 &middot; took 20s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#32</div>
+                <div class="pick-time">4:56</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #2</div>
+                <div class="pick-content">Silencer Last Word</div>
+                <div class="pick-meta">Ability ID: 10758 &middot; took 122s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#33</div>
+                <div class="pick-time">5:01</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #3</div>
+                <div class="pick-content">Silencer</div>
+                <div class="pick-meta">Hero ID: 75 &middot; took 80s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#34</div>
+                <div class="pick-time">5:10</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #4</div>
+                <div class="pick-content">Ringmaster Tame The Beasts</div>
+                <div class="pick-meta">Ability ID: 704 &middot; took 118s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#35</div>
+                <div class="pick-time">5:18</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #4</div>
+                <div class="pick-content">Dark Willow Terrorize <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 16680 &middot; took 150s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#36</div>
+                <div class="pick-time">5:20</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #1</div>
+                <div class="pick-content">Razor Eye Of The Storm <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10170 &middot; took 20s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#37</div>
+                <div class="pick-time">5:34</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #1</div>
+                <div class="pick-content">Ringmaster <span class="random-badge">RANDOM</span></div>
+                <div class="pick-meta">Hero ID: 131 &middot; took 210s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#38</div>
+                <div class="pick-time">5:34</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #3</div>
+                <div class="pick-content">Slardar Sprint</div>
+                <div class="pick-meta">Ability ID: 10228 &middot; took 8s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#39</div>
+                <div class="pick-time">5:41</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #2</div>
+                <div class="pick-content">Lina Laguna Blade <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10086 &middot; took 16s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#40</div>
+                <div class="pick-time">5:48</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #0</div>
+                <div class="pick-content">Silencer Global Silence <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10760 &middot; took 10s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#41</div>
+                <div class="pick-time">6:03</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #0</div>
+                <div class="pick-content">Phantom Assassin</div>
+                <div class="pick-meta">Hero ID: 44 &middot; took 116s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#42</div>
+                <div class="pick-time">6:08</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #2</div>
+                <div class="pick-content">Silencer Curse Of The Silent</div>
+                <div class="pick-meta">Ability ID: 10754 &middot; took 38s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#43</div>
+                <div class="pick-time">6:14</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #3</div>
+                <div class="pick-content">Huskar Life Break <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10548 &middot; took 4s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#44</div>
+                <div class="pick-time">6:21</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #1</div>
+                <div class="pick-content">Huskar Burning Spear</div>
+                <div class="pick-meta">Ability ID: 10544 &middot; took 12s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#45</div>
+                <div class="pick-time">6:29</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #1</div>
+                <div class="pick-content">Antimage Counterspell</div>
+                <div class="pick-meta">Ability ID: 14628 &middot; took 40s</div>
+            </div>
+            <div class="pick hero-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#46</div>
+                <div class="pick-time">6:42</div>
+                <div class="pick-type hero">HERO</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #4</div>
+                <div class="pick-content">Antimage <span class="random-badge">RANDOM</span></div>
+                <div class="pick-meta">Hero ID: 1 &middot; took 210s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#47</div>
+                <div class="pick-time">6:42</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #4</div>
+                <div class="pick-content">Pugna Decrepify</div>
+                <div class="pick-meta">Ability ID: 10374 &middot; took 16s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#48</div>
+                <div class="pick-time">6:49</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #3</div>
+                <div class="pick-content">Slardar Slithereen Crush</div>
+                <div class="pick-meta">Ability ID: 10230 &middot; took 14s</div>
+            </div>
+            <div class="pick ability-pick ult-pick" style="border-left-color: #2ecc71">
+                <div class="pick-number">#49</div>
+                <div class="pick-time">6:58</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #2ecc71">Radiant #2</div>
+                <div class="pick-content">Slardar Amplify Damage <span class="ult-badge">ULT</span></div>
+                <div class="pick-meta">Ability ID: 10234 &middot; took 82s</div>
+            </div>
+            <div class="pick ability-pick" style="border-left-color: #e74c3c">
+                <div class="pick-number">#50</div>
+                <div class="pick-time">7:05</div>
+                <div class="pick-type ability">ABILITY</div>
+                <div class="pick-player" style="color: #e74c3c">Dire #0</div>
+                <div class="pick-content">Juggernaut Healing Ward</div>
+                <div class="pick-meta">Ability ID: 10058 &middot; took 70s</div>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-value">12</div>
+                <div class="stat-label">Heroes in Pool</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">10</div>
+                <div class="stat-label">Heroes Picked</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">48</div>
+                <div class="stat-label">Abilities (38 Basic / 10 Ult)</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">40</div>
+                <div class="stat-label">Ability Picks</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">20</div>
+                <div class="stat-label">Radiant Ability Picks</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">20</div>
+                <div class="stat-label">Dire Ability Picks</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">4</div>
+                <div class="stat-label">Timeout (Random) Picks</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
