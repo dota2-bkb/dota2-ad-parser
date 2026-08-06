@@ -150,8 +150,11 @@ class ExtractProcessor {
     }
 
     private void processHeroEntity(Entity hero, String heroClassName) {
-        Integer playerId = safeInt(hero.getProperty("m_iPlayerID"));
-        if (playerId == null) {
+        Integer playerId = null;
+        if (hero.hasProperty("m_iPlayerID")) {
+            playerId = safeInt(hero.getProperty("m_iPlayerID"));
+        }
+        if (playerId == null && hero.hasProperty("m_nPlayerID")) {
             playerId = safeInt(hero.getProperty("m_nPlayerID"));
         }
 

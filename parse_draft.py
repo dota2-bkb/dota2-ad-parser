@@ -61,6 +61,11 @@ def get_ability_info(draft_ability_id, ability_mappings):
     return f"Ability {draft_ability_id}"
 
 
+def build_ult_set(ability_mappings):
+    """Build set of ability_ids that are ultimates (ability_slot == 3) from ability_mappings."""
+    return {m["draft_ability_id"] for m in ability_mappings if m.get("ability_slot") == 3}
+
+
 def get_hero_name(hero_id, hero_picks):
     """Get hero name from hero_id using hero_picks data."""
     for hero_pick in hero_picks:
@@ -121,8 +126,11 @@ def generate_html(draft_data, dem_file):
     combined_picks_sorted = sorted(combined_picks, key=lambda p: p.get("tick", 0))
 
     # Calculate stats
+    ult_ids = build_ult_set(ability_mappings)
     radiant_ability_picks = sum(1 for p in picks if p.get("player_slot", 0) < 128)
     dire_ability_picks = sum(1 for p in picks if p.get("player_slot", 0) >= 128)
+    num_ults = len(ult_ids)
+    num_basics = len(pool_items) - num_ults
 
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -201,6 +209,30 @@ def generate_html(draft_data, dem_file):
         .pool-item:hover {{
             background: #2a3554;
             border-color: #64ffda;
+        }}
+
+        .pool-item-ult {{
+            border-color: #f1c40f;
+            background: #2a2714;
+        }}
+
+        .pool-item-ult:hover {{
+            border-color: #f1c40f;
+            background: #3a3724;
+        }}
+
+        .ult-badge {{
+            font-size: 0.65em;
+            font-weight: 700;
+            color: #f1c40f;
+            background: rgba(241, 196, 15, 0.15);
+            padding: 1px 4px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }}
+
+        .pick.ult-pick {{
+            border-left-color: #f1c40f !important;
         }}
 
         .pool-item-name {{
@@ -367,9 +399,12 @@ def generate_html(draft_data, dem_file):
     for pool_item in pool_items:
         draft_ability_id = pool_item.get("ability_id", 0)
         ability_name = get_ability_info(draft_ability_id, ability_mappings)
+        is_ult = draft_ability_id in ult_ids
+        ult_class = " pool-item-ult" if is_ult else ""
+        ult_label = ' <span class="ult-badge">ULT</span>' if is_ult else ""
 
-        html_content += f'''            <div class="pool-item">
-                <div class="pool-item-name">{ability_name}</div>
+        html_content += f'''            <div class="pool-item{ult_class}">
+                <div class="pool-item-name">{ability_name}{ult_label}</div>
                 <div class="pool-item-ids">ID: {draft_ability_id}</div>
             </div>\n'''
 
@@ -402,9 +437,11 @@ def generate_html(draft_data, dem_file):
         else:  # ability
             draft_ability_id = pick.get("ability_id", 0)
             ability_name = get_ability_info(draft_ability_id, ability_mappings)
-            content = ability_name
+            is_ult = draft_ability_id in ult_ids
+            ult_suffix = ' <span class="ult-badge">ULT</span>' if is_ult else ""
+            content = ability_name + ult_suffix
             meta = f"Ability ID: {draft_ability_id}"
-            css_class = "ability-pick"
+            css_class = "ability-pick ult-pick" if is_ult else "ability-pick"
 
         html_content += f'''            <div class="pick {css_class}" style="border-left-color: {color}">
                 <div class="pick-number">#{idx}</div>
@@ -429,7 +466,7 @@ def generate_html(draft_data, dem_file):
             </div>
             <div class="stat-box">
                 <div class="stat-value">{len(pool_items)}</div>
-                <div class="stat-label">Abilities in Pool</div>
+                <div class="stat-label">Abilities ({num_basics} Basic / {num_ults} Ult)</div>
             </div>
             <div class="stat-box">
                 <div class="stat-value">{len(picks)}</div>
